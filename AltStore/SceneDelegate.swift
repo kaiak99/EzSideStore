@@ -22,6 +22,24 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate
         // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
         guard let _ = (scene as? UIWindowScene) else { return }
         
+        // =========================================================
+        // MODIFICA: RIMOZIONE NEWS E BROWSE
+        // =========================================================
+        if let tabBarController = window?.rootViewController as? UITabBarController,
+           var viewControllers = tabBarController.viewControllers,
+           viewControllers.count >= 4 {
+            
+            // Rimuoviamo News (0) e Browse (1)
+            viewControllers.removeSubrange(0...1)
+            
+            // Applichiamo la nuova lista (rimarranno My Apps e Settings)
+            tabBarController.setViewControllers(viewControllers, animated: false)
+            
+            // Impostiamo il primo tab disponibile (My Apps) come selezionato
+            tabBarController.selectedIndex = 0
+        }
+        // =========================================================
+        
         if let context = connectionOptions.urlContexts.first
         {
             self.open(context)
@@ -127,7 +145,11 @@ private extension SceneDelegate
                 let queryItems = components.queryItems?.reduce(into: [String: String]()) { $0[$1.name.lowercased()] = $1.value } ?? [:]
                 guard let downloadURLString = queryItems["url"], let downloadURL = URL(string: downloadURLString) else { return }
                 
+                // Portiamo l'utente sul primo tab (My Apps) prima di far partire l'installazione
                 DispatchQueue.main.async {
+                    if let tabBarController = self.window?.rootViewController as? UITabBarController {
+                        tabBarController.selectedIndex = 0
+                    }
                     NotificationCenter.default.post(name: AppDelegate.importAppDeepLinkNotification, object: nil, userInfo: [AppDelegate.importAppDeepLinkURLKey: downloadURL])
                 }
             
