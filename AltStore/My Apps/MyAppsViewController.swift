@@ -187,29 +187,11 @@ private extension MyAppsViewController
     {
         let dynamicDataSource = RSTDynamicCollectionViewDataSource<InstalledApp>()
         dynamicDataSource.numberOfSectionsHandler = { 1 }
-        dynamicDataSource.numberOfItemsHandler = { _ in self.updatesDataSource.itemCount == 0 ? 1 : 0 }
+        // MODIFICA: Nasconde la cella No Updates impostando le righe a 0
+        dynamicDataSource.numberOfItemsHandler = { _ in return 0 }
         dynamicDataSource.cellIdentifierHandler = { _ in "NoUpdatesCell" }
         dynamicDataSource.cellConfigurationHandler = { (cell, _, indexPath) in
-            let cell = cell as! NoUpdatesCollectionViewCell
-            cell.layoutMargins.left = self.view.layoutMargins.left
-            cell.layoutMargins.right = self.view.layoutMargins.right
-            
-            cell.blurView.layer.cornerRadius = 20
-            cell.blurView.layer.masksToBounds = true
-            cell.blurView.backgroundColor = .altPrimary
-            
-            cell.button.addTarget(self, action: #selector(MyAppsViewController.showHiddenUpdatesAlert(_:)), for: .primaryActionTriggered)
-            
-            if !self.unsupportedUpdates.isEmpty
-            {
-                cell.textLabel.text = NSLocalizedString("Unsupported Updates Available", comment: "")
-                cell.button.isHidden = false
-            }
-            else
-            {
-                cell.textLabel.text = NSLocalizedString("No Updates Available", comment: "")
-                cell.button.isHidden = true
-            }
+            // Ignoriamo la configurazione della cella in quanto non viene mostrata
         }
         
         return dynamicDataSource
@@ -571,23 +553,18 @@ private extension MyAppsViewController
             if !self.isCheckingForUpdates
             {
                 let indexPath = IndexPath(row: 0, section: Section.noUpdates.rawValue)
-                self.collectionView.reconfigureItems(at: [indexPath])
+                // Ignoriamo la cella NoUpdates per non far crashare la reconfigure
+                // self.collectionView.reconfigureItems(at: [indexPath])
             }
         }
         else
         {
-            // Might not work if already reloading collection view,
-            // but hopefully iOS 14 users won't notice...
-            self.collectionView.reloadSections(IndexSet([Section.noUpdates.rawValue]))
+            // self.collectionView.reloadSections(IndexSet([Section.noUpdates.rawValue]))
         }
     }
     
     func updateUnsupportedUpdates()
     {
-        // TIL includesPendingChanges does not apply to relationships, so we NEED to fetch InstalledApp to check isActive.
-        // let fetchRequest = StoreApp.fetchRequest()
-        // fetchRequest.includesPendingChanges = true // isActive might not be persisted to disk
-        
         let predicate = NSPredicate(format: "%K == YES AND %K != nil", #keyPath(InstalledApp.isActive), #keyPath(InstalledApp.storeApp))
         let activeSourceApps = InstalledApp.all(satisfying: predicate, in: DatabaseManager.shared.viewContext)
                     
@@ -1694,9 +1671,15 @@ extension MyAppsViewController
                     headerView.textLabel.text = NSLocalizedString("Active", comment: "")
                 }
                 
+                // =========================================================
+                // FORZA COLORE ARANCIONE PER REFRESH ALL
+                // =========================================================
                 headerView.button.isIndicatingActivity = false
-                headerView.button.activityIndicatorView.color = .altPrimary
+                headerView.button.activityIndicatorView.color = .orange
                 headerView.button.setTitle(NSLocalizedString("Refresh All", comment: ""), for: .normal)
+                headerView.button.setTitleColor(.orange, for: .normal)
+                // =========================================================
+
                 headerView.button.addTarget(self, action: #selector(MyAppsViewController.refreshAllApps(_:)), for: .primaryActionTriggered)
                 
                 headerView.button.layoutIfNeeded()
@@ -1753,6 +1736,12 @@ extension MyAppsViewController
                 }
                 
                 footerView.textLabel.isHidden = remainingAppIDs < 0
+                
+                // =========================================================
+                // FORZA COLORE ARANCIONE PER VIEW APP IDS
+                // =========================================================
+                footerView.button.setTitleColor(.orange, for: .normal)
+                // =========================================================
                 
             case .individual, .organization, .unknown: footerView.textLabel.isHidden = true
             @unknown default: break
@@ -2048,8 +2037,8 @@ extension MyAppsViewController: UICollectionViewDelegateFlowLayout
         switch section
         {
         case .noUpdates:
-            let size = CGSize(width: collectionView.bounds.width, height: 44)
-            return size
+            // LA CELLA NO UPDATES DIVENTA ALTA 0 PIXEL
+            return .zero
             
         case .updates:
             let item = self.dataSource.item(at: indexPath)
@@ -2099,17 +2088,6 @@ extension MyAppsViewController: UICollectionViewDelegateFlowLayout
         func appIDsFooterSize() -> CGSize
         {
             guard let _ = DatabaseManager.shared.activeTeam() else { return .zero }
-            
-            // let indexPath = IndexPath(row: 0, section: section.rawValue)
-            // let footerView = self.collectionView(collectionView, viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionFooter, at: indexPath) as! InstalledAppsCollectionFooterView
-                        
-            // let size = footerView.systemLayoutSizeFitting(CGSize(width: collectionView.frame.width, height: UIView.layoutFittingExpandedSize.height),
-            //                                               withHorizontalFittingPriority: .required,
-            //                                               verticalFittingPriority: .fittingSizeLevel)
-            // return size
-
-            // NOTE: double dequeue of cell has been discontinued
-            // TODO: Using harcoded value until this is fixed
             return CGSize(width: collectionView.bounds.width, height: 60.5)
         }
         
@@ -2354,11 +2332,6 @@ extension MyAppsViewController: NSFetchedResultsControllerDelegate
         {
         case self.activeAppsDataSource: self.didChangeActiveApps = false
         case self.updatesDataSource where !_viewDidAppear:
-            // Responding to NSFetchedResultsController updates before the collection view has
-            // been shown may throw exceptions because the collection view cannot accurately
-            // count the number of items before the update. However, if we manually call
-            // performBatchUpdates _before_ responding to updates, the collection view can get
-            // an accurate pre-update item count.
             self.collectionView.performBatchUpdates(nil, completion: nil)
             
         default: break
@@ -2381,7 +2354,6 @@ extension MyAppsViewController: NSFetchedResultsControllerDelegate
         switch dataSource
         {
         case self.activeAppsDataSource where type == .insert || type == .delete:
-            // Update unsupportedUpdates if there is insertion or deletion in active apps section.
             self.didChangeActiveApps = true
             
         default: break
@@ -2400,30 +2372,11 @@ extension MyAppsViewController: NSFetchedResultsControllerDelegate
             guard self.didChangeActiveApps else { break }
             
             DispatchQueue.main.async {
-                // Update after dataSource.controllerDidChangeContent(),
-                // or else pre-iOS 15 users might crash due to reloadSections().
                 self.update()
             }
             
         case self.updatesDataSource:
-            let previousUpdateCount = self.collectionView.numberOfItems(inSection: Section.updates.rawValue)
-            let updateCount = Int(self.updatesDataSource.itemCount)
-            
-            if previousUpdateCount == 0 && updateCount > 0
-            {
-                // Remove "No Updates Available" cell.
-                let change = RSTCellContentChange(type: .delete, currentIndexPath: IndexPath(item: 0, section: Section.noUpdates.rawValue), destinationIndexPath: nil)
-                self.collectionView.add(change)
-            }
-            else if previousUpdateCount > 0 && updateCount == 0
-            {
-                // Insert "No Updates Available" cell.
-                let change = RSTCellContentChange(type: .insert, currentIndexPath: nil, destinationIndexPath: IndexPath(item: 0, section: Section.noUpdates.rawValue))
-                self.collectionView.add(change)
-                
-                // Update unsupported updates _before_ calling controllerDidChangeContent()
-                self.updateUnsupportedUpdates()
-            }
+            self.updateUnsupportedUpdates()
         
         default: break
         }

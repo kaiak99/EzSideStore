@@ -9,7 +9,6 @@
 import UIKit
 import AltStoreCore
 
-
 @available(iOS 13, *)
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate
 {
@@ -17,28 +16,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions)
     {
-        // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
-        // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
-        // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
         guard let _ = (scene as? UIWindowScene) else { return }
         
-        // =========================================================
-        // MODIFICA: RIMOZIONE NEWS E BROWSE
-        // =========================================================
+        // ==========================================
+        // FORZA ICONA INGRANAGGIO PER SETTINGS (Tab 1)
+        // ==========================================
         if let tabBarController = window?.rootViewController as? UITabBarController,
-           var viewControllers = tabBarController.viewControllers,
-           viewControllers.count >= 4 {
+           let viewControllers = tabBarController.viewControllers,
+           viewControllers.count >= 2 {
             
-            // Rimuoviamo News (0) e Browse (1)
-            viewControllers.removeSubrange(0...1)
-            
-            // Applichiamo la nuova lista (rimarranno My Apps e Settings)
-            tabBarController.setViewControllers(viewControllers, animated: false)
-            
-            // Impostiamo il primo tab disponibile (My Apps) come selezionato
-            tabBarController.selectedIndex = 0
+            // L'indice 1 è il tab Settings
+            viewControllers[1].tabBarItem.image = UIImage(systemName: "gear")
+            viewControllers[1].tabBarItem.selectedImage = UIImage(systemName: "gear")
         }
-        // =========================================================
+        // ==========================================
         
         if let context = connectionOptions.urlContexts.first
         {
@@ -48,13 +39,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate
 
     func sceneWillEnterForeground(_ scene: UIScene)
     {
-        // Called as the scene transitions from the background to the foreground.
-        // Use this method to undo the changes made on entering the background.
-        
-        // applicationWillEnterForeground is _not_ called when launching app,
-        // whereas sceneWillEnterForeground _is_ called when launching.
-        // As a result, DatabaseManager might not be started yet, so just return if it isn't
-        // (since all these methods are called separately during app startup).
         guard DatabaseManager.shared.isStarted else { return }
         
         AppManager.shared.update()
@@ -65,15 +49,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate
 
     func sceneDidEnterBackground(_ scene: UIScene)
     {
-        // Called as the scene transitions from the foreground to the background.
-        // Use this method to save data, release shared resources, and store enough scene-specific state information
-        // to restore the scene back to its current state.
-        
         guard UIApplication.shared.applicationState == .background else { return }
         
-        // Make sure to update AppDelegate.applicationDidEnterBackground() as well.
-
-        // TODO: @mahee96: find if we need to stop em_proxy as in altstore?
         if UserDefaults.standard.enableEMPforWireguard {
             stopEMProxy()
         }
@@ -115,6 +92,8 @@ private extension SceneDelegate
             guard let components = URLComponents(url: context.url, resolvingAgainstBaseURL: false) else { return }
             guard let host = components.host?.lowercased() else { return }
             
+            guard let tabBarController = window?.rootViewController as? UITabBarController else { return }
+
             switch host
             {
             case "appbackupresponse":
@@ -141,25 +120,28 @@ private extension SceneDelegate
                     NotificationCenter.default.post(name: AppDelegate.appBackupDidFinish, object: nil, userInfo: [AppDelegate.appBackupResultKey: result])
                 }
                 
-            case "install":
-                let queryItems = components.queryItems?.reduce(into: [String: String]()) { $0[$1.name.lowercased()] = $1.value } ?? [:]
-                guard let downloadURLString = queryItems["url"], let downloadURL = URL(string: downloadURLString) else { return }
-                
-                // Portiamo l'utente sul primo tab (My Apps) prima di far partire l'installazione
+            case "install", "apps", "myapps":
                 DispatchQueue.main.async {
-                    if let tabBarController = self.window?.rootViewController as? UITabBarController {
-                        tabBarController.selectedIndex = 0
+                    // Indice 0 = My Apps
+                    tabBarController.selectedIndex = 0
+                    
+                    if host == "install" {
+                        let queryItems = components.queryItems?.reduce(into: [String: String]()) { $0[$1.name.lowercased()] = $1.value } ?? [:]
+                        if let downloadURLString = queryItems["url"], let downloadURL = URL(string: downloadURLString) {
+                            NotificationCenter.default.post(name: AppDelegate.importAppDeepLinkNotification, object: nil, userInfo: [AppDelegate.importAppDeepLinkURLKey: downloadURL])
+                        }
                     }
-                    NotificationCenter.default.post(name: AppDelegate.importAppDeepLinkNotification, object: nil, userInfo: [AppDelegate.importAppDeepLinkURLKey: downloadURL])
                 }
             
-            case "source":
-                let queryItems = components.queryItems?.reduce(into: [String: String]()) { $0[$1.name.lowercased()] = $1.value } ?? [:]
-                guard let sourceURLString = queryItems["url"], let sourceURL = URL(string: sourceURLString) else { return }
-                
+            case "source", "sources":
+                // Ignoriamo sources dato che abbiamo rimosso il tab, andiamo su My Apps
                 DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: AppDelegate.addSourceDeepLinkNotification, object: nil, userInfo: [AppDelegate.addSourceDeepLinkURLKey: sourceURL])
+                    tabBarController.selectedIndex = 0
                 }
+                
+            case "settings":
+                // Indice 1 = Settings
+                tabBarController.selectedIndex = 1
                 
             case "pairing":
                 let queryItems = components.queryItems?.reduce(into: [String: String]()) { $0[$1.name.lowercased()] = $1.value } ?? [:]
@@ -184,13 +166,11 @@ private extension SceneDelegate
     }
 }
 
-
 func exportPairingFile(_ urlname: String) {
     if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
        let window = windowScene.windows.first, let viewcontroller = window.rootViewController {
         let fm = FileManager.default
         let documentsPath = fm.documentsDirectory.appendingPathComponent("ALTPairingFile.mobiledevicepairing")
-        
         
         guard let data = try? Data(contentsOf: documentsPath) else {
             let toastView = ToastView(text: NSLocalizedString("Failed to find Pairing File!", comment: ""), detailText: nil)

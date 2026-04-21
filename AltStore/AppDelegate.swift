@@ -46,13 +46,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool
     {
+        // ===================================================
+        // Colora SOLO l'icona selezionata nella TabBar in fondo
+        // ===================================================
+        UITabBar.appearance().tintColor = UIColor.orange
+        // ===================================================
+
         // navigation bar buttons spacing is too much (so hack it to use minimal spacing)
-        // this is swift-5 specific behavior and might change
-        // https://stackoverflow.com/a/64988363/11971304
-        //
-        // Warning: this affects all screens through out the app, and basically overrides storyboard
         let stackViewAppearance = UIStackView.appearance(whenContainedInInstancesOf: [UINavigationBar.self])
-        stackViewAppearance.spacing = -8        // adjust as needed
+        stackViewAppearance.spacing = -8        
         
         consoleLog.startCapturing()
         print("===================================================")
@@ -62,32 +64,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         print("===================================================")
         print("\n ")
 
-        // Override point for customization after application launch.
-//        UserDefaults.standard.setValue(true, forKey: "com.apple.CoreData.MigrationDebug")
-//        UserDefaults.standard.setValue(true, forKey: "com.apple.CoreData.SQLDebug")
-
         // Register default settings before doing anything else.
         UserDefaults.registerDefaults()
         
-        
         // Recreate Database if requested
-        // NOTE: Userdefaults are local to the SideStore.app sandbox and are not shared
         if UserDefaults.standard.recreateDatabaseOnNextStart{
-            // reset the state
             UserDefaults.standard.recreateDatabaseOnNextStart = false
-            
-            // re-create database
             DatabaseManager.recreateDatabase()
         }
         
-        
         DatabaseManager.shared.start { (error) in
-            if let error = error
-            {
+            if let error = error {
                 print("Failed to start DatabaseManager. Error:", error as Any)
-            }
-            else
-            {
+            } else {
                 print("Started DatabaseManager.")
             }
         }
@@ -95,7 +84,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         self.setTintColor()
         self.prepareImageCache()
 
-        // TODO: @mahee96: find if we need to start em_proxy as in altstore?
         if UserDefaults.standard.enableEMPforWireguard {
             startEMProxy(bind_addr: AppConstants.Proxy.serverURL)
         }
@@ -121,8 +109,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     
     func applicationDidEnterBackground(_ application: UIApplication)
     {
-        // Make sure to update SceneDelegate.sceneDidEnterBackground() as well.
-        // TODO: @mahee96: find if we need to stop em_proxy as in altstore?
         if UserDefaults.standard.enableEMPforWireguard {
             stopEMProxy()
         }
@@ -136,7 +122,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             case .failure(let error): print("[ALTLog] Failed to purge logged errors before \(midnightOneMonthAgo).", error)
             }
         }
-             
     }
 
     func applicationWillEnterForeground(_ application: UIApplication)
@@ -163,7 +148,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     
     func applicationWillTerminate(_ application: UIApplication) {
-        // Stop console logging and clean up resources
         print("\n ")
         print("===================================================")
         print("| Console Logger stopped capturing output streams |")
@@ -178,16 +162,11 @@ extension AppDelegate
 {
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration
     {
-        // Called when a new scene session is being created.
-        // Use this method to select a configuration to create the new scene with.
         return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
     }
     
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>)
     {
-        // Called when the user discards a scene session.
-        // If any sessions were discarded while the application was not running, this will be called shortly after application:didFinishLaunchingWithOptions.
-        // Use this method to release any resources that were specific to the discarded scenes, as they will not return.
     }
 }
 
@@ -195,20 +174,18 @@ private extension AppDelegate
 {
     func setTintColor()
     {
-        self.window?.tintColor = .altPrimary
+        self.window?.tintColor = .orange
     }
     
     func prepareImageCache()
     {
-        // Avoid caching responses twice.
         DataLoader.sharedUrlCache.diskCapacity = 0
         
         let pipeline = ImagePipeline { configuration in
             do
             {
                 let dataCache = try DataCache(name: "io.sidestore.Nuke")
-                dataCache.sizeLimit = 512 * 1024 * 1024 // 512MB
-                
+                dataCache.sizeLimit = 512 * 1024 * 1024 
                 configuration.dataCache = dataCache
             }
             catch
@@ -318,7 +295,6 @@ extension AppDelegate
 {
     private func prepareForBackgroundFetch()
     {
-        // "Fetch" every hour, but then refresh only those that need to be refreshed (so we don't drain the battery).
         (UIApplication.shared as LegacyBackgroundFetching).setMinimumBackgroundFetchInterval(1 * 60 * 60)
         
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { (success, error) in
@@ -450,8 +426,6 @@ private extension AppDelegate
                 
                 try context.save()
                 
-                
-                
                 let updatesFetchRequest = InstalledApp.supportedUpdatesFetchRequest()
                 let newsItemsFetchRequest = NewsItem.fetchRequest() as NSFetchRequest<NewsItem>
                 
@@ -464,13 +438,8 @@ private extension AppDelegate
                     
                     if let previousUpdate = previousUpdates.first(where: { $0[#keyPath(InstalledApp.bundleIdentifier)] == update.bundleIdentifier })
                     {
-                        // An update for this app was already available, so check whether the version or build version is different.
                         guard let previousVersion = previousUpdate[#keyPath(InstalledApp.storeApp.latestSupportedVersion.version)] else { continue }
-                        
-                        // previousUpdate might not contain buildVersion, but if it does then map empty string to nil to match AppVersion.
                         let previousBuildVersion = previousUpdate[#keyPath(InstalledApp.storeApp.latestSupportedVersion._buildVersion)].map { $0.isEmpty ? nil : "" }
-                        
-                        // Only show notification if previous latestSupportedVersion does not _exactly_ match current latestSupportedVersion.
                         guard previousVersion != latestSupportedVersion.version || previousBuildVersion != latestSupportedVersion.buildVersion  else { continue }
                     }
                     
